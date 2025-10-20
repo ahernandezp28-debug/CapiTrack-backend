@@ -1,0 +1,200 @@
+// ======================================================
+//  Prisma Schema - CapiTrack
+//  Gestión de unidades, reportes, combustible, GPS y alertas
+// ======================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ======================================================
+//  MODELOS BASE
+// ======================================================
+
+model Proveedor {
+  proveedor_id Int       @id @default(autoincrement())
+  nombre       String
+  contacto     String?
+
+  unidades     Unidad[]
+
+  @@map("proveedores")
+}
+
+model Rol {
+  rol_id      Int       @id @default(autoincrement())
+  nombre      String    @unique
+  descripcion String?
+
+  usuarios    Usuario[]
+
+  @@map("roles")
+}
+
+model Usuario {
+  usuario_id    Int       @id @default(autoincrement())
+  nombre        String
+  correo        String   @unique
+  password      String
+  rol_id        Int
+  estado        Boolean  @default(true)
+  creado_en     DateTime @default(now())
+  actualizado_en DateTime @updatedAt
+  firebaseUid   String?   
+
+  rol          Rol        @relation(fields: [rol_id], references: [rol_id])
+  unidades     Unidad[]   @relation("OperadorUnidad")
+  reportes     Reporte[]
+  jornadas     Jornada[]
+  incidentes   Incidente[]
+  combustibles Combustible[]
+
+  @@map("usuarios")
+}
+
+// ======================================================
+//  MODELOS PRINCIPALES
+// ======================================================
+
+model Unidad {
+  unidad_id           Int          @id @default(autoincrement())
+  nombre              String
+  tipo                String        // Tipo de unidad (camión, excavadora, pickup, etc.)
+  placa               String?       @unique
+  tipo_combustible    String        // Diésel, gasolina, eléctrico, etc.
+  estado              String        // Activo, en mantenimiento, fuera de servicio, etc.
+  proveedor_id        Int?
+  usuario_operador_id Int?
+
+  proveedor           Proveedor?   @relation(fields: [proveedor_id], references: [proveedor_id])
+  operador            Usuario?     @relation("OperadorUnidad", fields: [usuario_operador_id], references: [usuario_id])
+  servicios           Servicio[]
+  reportes            Reporte[]
+  jornadas            Jornada[]
+  combustibles        Combustible[]
+  gps                 Gps[]
+  alertas             Alerta[]
+  incidentes          Incidente[]
+
+  @@map("unidades")
+}
+
+// ======================================================
+//  MÓDULO DE SERVICIOS Y REPORTES
+// ======================================================
+
+model Servicio {
+  servicio_id Int      @id @default(autoincrement())
+  tipo        String
+  fecha       DateTime
+  descripcion String?
+  unidad_id   Int
+
+  unidad      Unidad   @relation(fields: [unidad_id], references: [unidad_id])
+
+  @@map("servicios")
+}
+
+model Reporte {
+  reporte_id       Int      @id @default(autoincrement())
+  tipo             String
+  fecha            DateTime
+  hora_inicio      DateTime
+  hora_fin         DateTime
+  horas_trabajadas Float?
+  observaciones    String?
+  unidad_id        Int
+  usuario_id       Int
+
+  unidad           Unidad   @relation(fields: [unidad_id], references: [unidad_id])
+  usuario          Usuario  @relation(fields: [usuario_id], references: [usuario_id])
+
+  @@map("reportes")
+}
+
+// ======================================================
+//  NUEVOS MODELOS AGREGADOS
+// ======================================================
+
+// --- Combustible ---
+model Combustible {
+  combustible_id  Int       @id @default(autoincrement())
+  tipo            String
+  cantidad        Float
+  costo_total     Float?
+  fecha_registro  DateTime  @default(now())
+  unidad_id       Int
+  usuario_id      Int       // 👈 Nuevo: usuario que registró el combustible
+
+  unidad          Unidad    @relation(fields: [unidad_id], references: [unidad_id])
+  usuario         Usuario   @relation(fields: [usuario_id], references: [usuario_id])
+
+  @@map("combustibles")
+}
+
+// --- GPS ---
+model Gps {
+  gps_id        Int       @id @default(autoincrement())
+  latitud       Float
+  longitud      Float
+  velocidad     Float?
+  fecha_registro DateTime @default(now())
+  unidad_id     Int
+
+  unidad        Unidad    @relation(fields: [unidad_id], references: [unidad_id])
+
+  @@map("gps")
+}
+
+// --- Alerta ---
+model Alerta {
+  alerta_id      Int       @id @default(autoincrement())
+  tipo           String
+  mensaje        String
+  prioridad      String
+  fecha_generada DateTime  @default(now())
+  unidad_id      Int
+
+  unidad         Unidad    @relation(fields: [unidad_id], references: [unidad_id])
+
+  @@map("alertas")
+}
+
+// --- Jornada ---
+model Jornada {
+  jornada_id    Int       @id @default(autoincrement())
+  fecha         DateTime
+  hora_inicio   DateTime
+  hora_fin      DateTime
+  horas_trabajo Float?
+  observacion   String?
+  unidad_id     Int
+  usuario_id    Int
+
+  unidad        Unidad    @relation(fields: [unidad_id], references: [unidad_id])
+  usuario       Usuario   @relation(fields: [usuario_id], references: [usuario_id])
+
+  @@map("jornadas")
+}
+
+// --- Incidente ---
+model Incidente {
+  incidente_id  Int       @id @default(autoincrement())
+  tipo          String
+  descripcion   String
+  fecha         DateTime  @default(now())
+  severidad     String
+  unidad_id     Int
+  usuario_id    Int
+
+  unidad        Unidad    @relation(fields: [unidad_id], references: [unidad_id])
+  usuario       Usuario   @relation(fields: [usuario_id], references: [usuario_id])
+
+  @@map("incidentes")
+}
+
