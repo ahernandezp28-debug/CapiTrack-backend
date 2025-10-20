@@ -75,11 +75,7 @@ npx prisma migrate dev
 bash
 Copiar código
 npm run start:dev
-El servidor quedará disponible en:
 
-arduino
-Copiar código
-http://localhost:3000
  Roles del Sistema
 Rol	Descripción	Permisos principales
 Administrador (1)	Control total del sistema	CRUD completo
