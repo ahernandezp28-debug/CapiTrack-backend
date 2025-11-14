@@ -170,23 +170,43 @@ async update(id: number, updateUnidadDto: UpdateUnidadDto, dbUser: any) {
 
 
   // ======================================================
-  // 🔴 Eliminar una unidad
   // ======================================================
-  async remove(id: number, dbUser: any) {
-    const unidad = await this.prisma.unidad.findUnique({
-      where: { unidad_id: id },
-    });
-
-    if (!unidad) {
-      throw new NotFoundException('Unidad no encontrada');
-    }
-
-    if (dbUser.rol_id !== 1) {
-      throw new ForbiddenException('Solo los administradores pueden eliminar unidades');
-    }
-
-    return this.prisma.unidad.delete({
-      where: { unidad_id: id },
-    });
+// 🔴 Eliminar una unidad (con borrado en cascada)
+// ======================================================
+async remove(id: number, dbUser: any) {
+  if (!dbUser || dbUser.rol_id == null) {
+    throw new ForbiddenException('Usuario no autenticado o sin rol');
   }
+
+  if (dbUser.rol_id !== 1) {
+    throw new ForbiddenException('Solo los administradores pueden eliminar unidades');
+  }
+
+  const unidad = await this.prisma.unidad.findUnique({
+    where: { unidad_id: id },
+  });
+
+  if (!unidad) {
+    throw new NotFoundException('Unidad no encontrada');
+  }
+
+  // 🧹 Borrar relaciones hijas primero para no romper FK
+  await this.prisma.$transaction([
+    this.prisma.gps.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.servicio.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.combustible.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.alerta.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.incidente.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.geocerca.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.jornada.deleteMany({ where: { unidad_id: id } }),
+    this.prisma.reporte.deleteMany({ where: { unidad_id: id } }),
+    // 👇 finalmente la unidad
+    this.prisma.unidad.delete({ where: { unidad_id: id } }),
+  ]);
+
+  return {
+    unidad_id: id,
+  };
+}
+
 }

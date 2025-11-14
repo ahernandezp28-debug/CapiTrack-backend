@@ -117,20 +117,20 @@ export class UnidadesController {
   // 🔴 Eliminar una unidad
   // Solo admin
   // ======================================================
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  async remove(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const user = req['dbUser'];
+@Delete(':id')
+@HttpCode(HttpStatus.OK)
+async remove(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+  const user = (req as any).dbUser;  // lo setea el FirebaseAuthGuard
 
-    if (user.rol_id !== 1) {
-      throw new ForbiddenException('Solo los administradores pueden eliminar unidades');
-    }
+  const result = await this.unidadesService.remove(id, user);
 
-    const eliminada = await this.unidadesService.remove(id, user);
-    return {
-      statusCode: HttpStatus.OK,
-      message: '🗑️ Unidad eliminada correctamente',
-      data: eliminada,
-    };
-  }
+  return {
+    statusCode: HttpStatus.OK,
+    message: '🗑️ Unidad eliminada correctamente',
+    data: result,
+  };
+}
+
+
+  
 }

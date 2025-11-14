@@ -8,10 +8,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 export class AlertasService {
   constructor(
     private prisma: PrismaService,
-    private notif: NotificationsService, // 👈 Inyectamos notificaciones
+    private notif: NotificationsService, 
   ) {}
 
-  // ✅ Crear alerta manual
+  
   async create(dto: CreateAlertaDto, dbUser: any) {
     const { rol_id, usuario_id } = dbUser;
 
@@ -30,7 +30,7 @@ export class AlertasService {
       include: { unidad: true },
     });
 
-    // 🔔 Notificación en tiempo real
+    
     this.notif.emitirNuevaAlerta({
       id: alerta.alerta_id,
       tipo: alerta.tipo,
@@ -44,7 +44,7 @@ export class AlertasService {
     return alerta;
   }
 
-  // ✅ Ver alertas según permisos
+  
   async findAll(dbUser: any) {
     const { rol_id, usuario_id, proveedor_id } = dbUser;
 
@@ -87,7 +87,7 @@ export class AlertasService {
       include: { unidad: true },
     });
 
-    // 🔔 Notificación en tiempo real por edición
+    // Notificación en tiempo real por edición
     this.notif.emitirNuevaAlerta({
       id: alerta.alerta_id,
       mensaje: 'Se actualizó una alerta',
@@ -105,7 +105,7 @@ export class AlertasService {
 
     await this.prisma.alerta.delete({ where: { alerta_id: id } });
 
-    // 🔔 Notificación de eliminación
+    //  Notificación de eliminación
     this.notif.emitirNuevaAlerta({
       id,
       evento: 'alerta_eliminada',

@@ -1,20 +1,10 @@
-import { IsNumber, IsNotEmpty, IsOptional } from 'class-validator';
-
+// src/gps/dto/create-gp.dto.ts
 export class CreateGpsDto {
-  @IsNumber()
-  @IsNotEmpty()
-  latitud: number;
-
-  @IsNumber()
-  @IsNotEmpty()
-  longitud: number;
-
-  @IsNumber()
-  @IsOptional()
-  velocidad?: number;
-
-  @IsNumber()
-  @IsNotEmpty()
   unidad_id: number;
+  latitud: number;
+  longitud: number;
+  velocidad?: number;
+  ultima_geocerca_id?: number;
 }
+
 

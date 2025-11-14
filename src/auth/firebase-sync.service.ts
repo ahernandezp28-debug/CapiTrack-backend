@@ -30,8 +30,8 @@ export class FirebaseSyncService {
         create: {
           nombre,
           correo: email,
-          password: 'firebase', // Contraseña simbólica (no se usa realmente)
-          rol_id: 1, // Asignar un rol por defecto, por ejemplo “Administrador”
+          password: 'firebase', 
+          rol_id: 1, 
         },
       });
 

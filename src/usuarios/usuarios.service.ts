@@ -97,5 +97,21 @@ export class UsuariosService {
 
     return this.prisma.usuario.delete({ where: { usuario_id: id } });
   }
+
+  // 👇 Operadores activos (rol_id = 2)
+async findOperadoresActivos() {
+  return this.prisma.usuario.findMany({
+    where: {
+      rol_id: 2,        // 2 = Operador
+      estado: true,     // solo activos
+    },
+    select: {
+      usuario_id: true,
+      nombre: true,
+      correo: true,
+    },
+  });
+}
+
 }
 

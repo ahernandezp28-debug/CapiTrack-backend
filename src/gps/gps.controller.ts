@@ -1,41 +1,57 @@
-import { Controller, Post, Get, Body, Param, Req, ParseIntPipe, UseGuards } from '@nestjs/common';
-import { GpsService } from './gps.service';
-import { CreateGpsDto } from './dto/create-gps.dto';
-import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
+// src/gps/gps.controller.ts
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { GpsService } from "./gps.service";
+import { CreateGpsReportDto } from "./dto/create-gps-report.dto";
+import { GpsHistoryQueryDto } from "./dto/gps-history-query.dto";
+// Ajusta estos imports a tus guards reales
+import { FirebaseAuthGuard } from "../auth/firebase-auth.guard";
 
-@Controller('gps')
-@UseGuards(FirebaseAuthGuard)
+@Controller("gps")
+@UseGuards(FirebaseAuthGuard) // si quieres permitir sin login, puedes quitar esto
 export class GpsController {
-  constructor(private service: GpsService) {}
+  constructor(private readonly gpsService: GpsService) {}
 
-  @Post()
-  registrar(@Req() req, @Body() dto: CreateGpsDto) {
-    return this.service.create(dto, req['dbUser']);
+  /**
+   * POST /gps/report
+   * Body:
+   * {
+   *   "unidad_id": 1,
+   *   "latitud": 14.63,
+   *   "longitud": -90.50,
+   *   "velocidad": 35.4
+   * }
+   */
+  @Post("report")
+  async report(@Body() dto: CreateGpsReportDto) {
+    const created = await this.gpsService.createReport(dto);
+    return { ok: true, gps: created };
   }
 
-  @Get('unidad/:id')
-  obtenerPorUnidad(
-    @Req() req,
-    @Param('id', ParseIntPipe) id: number,
-  ) {
-    return this.service.findAllByUnidad(id, req['dbUser']);
+  /**
+   * GET /gps/ultimas
+   * GET /gps/ultimas?unidadId=1
+   */
+  @Get("ultimas")
+  async ultimas(@Query("unidadId") unidadId?: string) {
+    const list = await this.gpsService.getUltimas(
+      unidadId ? Number(unidadId) : undefined,
+    );
+    return { ok: true, data: list };
   }
 
-  @Get('unidad/:id/ultima')
-obtenerUltima(
-  @Req() req,
-  @Param('id', ParseIntPipe) id: number
-) {
-  return this.service.ultimaPosicion(id, req['dbUser']);
-}
-
-@Get('unidad/:id/ruta')
-obtenerRuta(
-  @Req() req,
-  @Param('id', ParseIntPipe) id: number
-) {
-  const limite = Number(req.query.limite) || 20;
-  return this.service.ruta(id, limite, req['dbUser']);
-}
-
+  /**
+   * GET /gps/historial?unidadId=1&desde=2025-11-01T00:00:00.000Z&hasta=2025-11-14T23:59:59.999Z&limit=500
+   */
+  @Get("historial")
+  async historial(@Query() query: GpsHistoryQueryDto) {
+    const data = await this.gpsService.getHistory(query);
+    return { ok: true, data };
+  }
 }

@@ -6,55 +6,43 @@ import {
   Patch,
   Param,
   Delete,
-  ParseIntPipe,
-  Req,
   UseGuards,
-  HttpCode,
-  HttpStatus,
 } from '@nestjs/common';
 import { ProveedoresService } from './proveedores.service';
 import { CreateProveedorDto } from './dto/create-proveedore.dto';
 import { UpdateProveedorDto } from './dto/update-proveedore.dto';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
-import type { Request } from 'express';
+// import { RolesGuard } from '../auth/roles.guard';
+// import { Roles } from '../auth/roles.decorator';
 
-@UseGuards(FirebaseAuthGuard)
+@UseGuards(FirebaseAuthGuard) // 👈 SOLO Firebase por ahora
 @Controller('proveedores')
 export class ProveedoresController {
   constructor(private readonly proveedoresService: ProveedoresService) {}
 
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Req() req: Request, @Body() dto: CreateProveedorDto) {
-    const nuevo = await this.proveedoresService.create(dto, req['dbUser']);
-    return { message: '✅ Proveedor creado correctamente', data: nuevo };
-  }
-
   @Get()
-  async findAll(@Req() req: Request) {
-    const proveedores = await this.proveedoresService.findAll(req['dbUser']);
-    return { total: proveedores.length, data: proveedores };
+  findAll() {
+    return this.proveedoresService.findAll();
   }
 
-  @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    const proveedor = await this.proveedoresService.findOne(id);
-    return { data: proveedor };
+  @Post()
+  // @Roles(1)   // 👈 desactivado temporalmente
+  create(@Body() createProveedorDto: CreateProveedorDto) {
+    return this.proveedoresService.create(createProveedorDto);
   }
 
   @Patch(':id')
-  async update(
-    @Req() req: Request,
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateProveedorDto,
+  // @Roles(1)
+  update(
+    @Param('id') id: string,
+    @Body() updateProveedorDto: UpdateProveedorDto,
   ) {
-    const actualizado = await this.proveedoresService.update(id, dto, req['dbUser']);
-    return { message: '✅ Proveedor actualizado correctamente', data: actualizado };
+    return this.proveedoresService.update(+id, updateProveedorDto);
   }
 
   @Delete(':id')
-  async remove(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const eliminado = await this.proveedoresService.remove(id, req['dbUser']);
-    return { message: '🗑️ Proveedor eliminado correctamente', data: eliminado };
+  // @Roles(1)
+  remove(@Param('id') id: string) {
+    return this.proveedoresService.remove(+id);
   }
 }

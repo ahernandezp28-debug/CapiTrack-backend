@@ -1,36 +1,45 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
-import { Injectable, OnModuleInit } from '@nestjs/common';
-import { join } from 'path';
-import { existsSync } from 'fs';
 
 @Injectable()
-export class FirebaseAdminService implements OnModuleInit {
-  public adminApp: admin.app.App;
+export class FirebaseAdminService {
+  private readonly logger = new Logger(FirebaseAdminService.name);
+  private app: admin.app.App;
 
-  onModuleInit() {
-    if (!admin.apps.length) {
-      // Ruta base depende de si estás en src (desarrollo) o dist (producción)
-      const basePath = process.env.NODE_ENV === 'production' ? 'dist' : 'src';
-      
-      // Cambia el nombre de tu key aquí si es necesario
-      const keyFileName = 'capitrack-94c0b-firebase-adminsdk-fbsvc-88c461fcf9.json';
-      const keyPath = join(process.cwd(), basePath, 'firebase', keyFileName);
-
-      if (!existsSync(keyPath)) {
-        throw new Error(`❌ Firebase key file not found at: ${keyPath}`);
-      }
-
-      this.adminApp = admin.initializeApp({
-        credential: admin.credential.cert(keyPath),
-      });
-
-      console.log('✅ Firebase Admin inicializado correctamente');
-    } else {
-      this.adminApp = admin.app();
+  constructor() {
+    // 👇 Si ya hay una app inicializada, solo la reutilizamos
+    if (admin.apps.length) {
+      this.logger.log('Reutilizando instancia existente de Firebase Admin');
+      this.app = admin.app();
+      return;
     }
+
+    // 👇 Primera vez: leemos el json y creamos la app
+    this.logger.log('Inicializando Firebase Admin con firebase-admin.json');
+
+    const filePath = path.join(
+      process.cwd(),
+      'src',
+      'firebase',
+      'firebase-admin.json',
+    );
+
+    const serviceAccount = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+    this.app = admin.initializeApp({
+      credential: admin.credential.cert(
+        serviceAccount as admin.ServiceAccount,
+      ),
+    });
   }
 
   getAuth() {
-    return this.adminApp.auth();
+    return this.app.auth();
+  }
+
+  async verifyIdToken(token: string) {
+    return this.app.auth().verifyIdToken(token);
   }
 }

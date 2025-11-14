@@ -1,92 +1,78 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+// src/gps/gps.service.ts
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import { CreateGpsReportDto } from "./dto/create-gps-report.dto";
+import { GpsHistoryQueryDto } from "./dto/gps-history-query.dto";
 
 @Injectable()
 export class GpsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: any, dbUser: any) {
-    const unidad = await this.prisma.unidad.findUnique({
-      where: { unidad_id: dto.unidad_id },
-    });
+  async createReport(dto: CreateGpsReportDto) {
+    // Opcional: podrías validar que la unidad existe antes
+    // await this.prisma.unidad.findUnique({ where: { unidad_id: dto.unidad_id } });
 
-    if (!unidad) {
-      throw new ForbiddenException('Unidad no válida');
-    }
-
-    const gps = await this.prisma.gps.create({
+    return this.prisma.gps.create({
       data: {
         latitud: dto.latitud,
         longitud: dto.longitud,
-        velocidad: dto.velocidad ?? 0,
+        velocidad: dto.velocidad,
         unidad_id: dto.unidad_id,
+        ultima_geocerca_id: dto.ultima_geocerca_id ?? null,
       },
     });
-
-    await this.checkGeofence(dto.unidad_id, dto.latitud, dto.longitud);
-
-    return gps;
   }
 
-  private async checkGeofence(unidad_id: number, lat: number, lng: number) {
-    const geocerca = await this.prisma.geocerca.findFirst({
-      where: { unidad_id },
-    });
-
-    if (!geocerca) return;
-
-    const distancia = this.haversine(lat, lng, geocerca.latitud, geocerca.longitud);
-    const fuera = distancia > geocerca.radio_metros;
-
-    if (fuera) {
-      await this.prisma.alerta.create({
-        data: {
-          tipo: 'Salida de Geocerca',
-          mensaje: `La unidad ${unidad_id} se salió del área permitida`,
-          prioridad: 'Alta',
-          unidad_id,
-        },
+  /**
+   * Última posición por unidad.
+   * - Si se manda unidadId → solo esa unidad.
+   * - Si no, todas las unidades (una fila por unidad).
+   */
+  async getUltimas(unidadId?: number) {
+    if (unidadId) {
+      const ultimo = await this.prisma.gps.findFirst({
+        where: { unidad_id: unidadId },
+        orderBy: { fecha_registro: "desc" },
       });
-
-      console.log('🚨 ALERTA: Unidad fuera de la geocerca');
+      return ultimo ? [ultimo] : [];
     }
-  }
 
-  private haversine(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const toRad = (x: number) => (x * Math.PI) / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) ** 2;
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  }
-
-  async findAllByUnidad(unidad_id: number, dbUser: any) {
-    return this.prisma.gps.findMany({
-      where: { unidad_id },
-      orderBy: { fecha_registro: 'desc' },
-      take: 200,
+    // Todas las filas ordenadas por unidad_id y fecha desc
+    const all = await this.prisma.gps.findMany({
+      orderBy: [{ unidad_id: "asc" }, { fecha_registro: "desc" }],
     });
+
+    // Nos quedamos con la primera fila de cada unidad
+    const map = new Map<number, any>();
+    for (const row of all) {
+      if (!map.has(row.unidad_id)) {
+        map.set(row.unidad_id, row);
+      }
+    }
+
+    return Array.from(map.values());
   }
 
-  async ultimaPosicion(unidad_id: number, dbUser: any) {
-    return this.prisma.gps.findFirst({
-      where: { unidad_id },
-      orderBy: { fecha_registro: 'desc' },
-    });
-  }
+  /**
+   * Historial de una unidad (por rango de fechas).
+   */
+  async getHistory(query: GpsHistoryQueryDto) {
+    const { unidadId, desde, hasta, limit } = query;
 
-  async ruta(unidad_id: number, limite: number = 20, dbUser: any) {
+    const where: any = {
+      unidad_id: unidadId,
+    };
+
+    if (desde || hasta) {
+      where.fecha_registro = {};
+      if (desde) where.fecha_registro.gte = new Date(desde);
+      if (hasta) where.fecha_registro.lte = new Date(hasta);
+    }
+
     return this.prisma.gps.findMany({
-      where: { unidad_id },
-      orderBy: { fecha_registro: 'desc' },
-      take: limite,
+      where,
+      orderBy: { fecha_registro: "asc" },
+      take: limit ?? 500,
     });
   }
 }

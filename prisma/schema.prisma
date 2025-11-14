@@ -45,7 +45,8 @@ model Usuario {
   estado         Boolean  @default(true)
   creado_en      DateTime @default(now())
   actualizado_en DateTime @updatedAt
-  firebaseUid    String?
+  firebaseUid String? @unique
+
 
   rol          Rol           @relation(fields: [rol_id], references: [rol_id])
   unidades     Unidad[]      @relation("OperadorUnidad")
@@ -133,7 +134,7 @@ model Combustible {
   costo_total    Float?
   fecha_registro DateTime @default(now())
   unidad_id      Int
-  usuario_id     Int // 👈 Nuevo: usuario que registró el combustible
+  usuario_id     Int //
 
   unidad  Unidad  @relation(fields: [unidad_id], references: [unidad_id])
   usuario Usuario @relation(fields: [usuario_id], references: [usuario_id])
