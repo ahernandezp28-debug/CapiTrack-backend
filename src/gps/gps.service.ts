@@ -4,75 +4,94 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { CreateGpsReportDto } from "./dto/create-gps-report.dto";
 import { GpsHistoryQueryDto } from "./dto/gps-history-query.dto";
 
+type GpsUltimoRow = {
+  gps_id: number;
+  unidad_id: number;
+  latitud: number;
+  longitud: number;
+  velocidad: number | null;
+  fecha_registro: Date;
+  unidadNombre: string | null;
+  placa: string | null;
+};
+
 @Injectable()
 export class GpsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {}
 
+  // Guarda punto GPS enviado por el operador
   async createReport(dto: CreateGpsReportDto) {
-    // Opcional: podrías validar que la unidad existe antes
-    // await this.prisma.unidad.findUnique({ where: { unidad_id: dto.unidad_id } });
-
-    return this.prisma.gps.create({
+    const created = await this.prisma.gps.create({
       data: {
+        unidad_id: dto.unidad_id,
         latitud: dto.latitud,
         longitud: dto.longitud,
-        velocidad: dto.velocidad,
-        unidad_id: dto.unidad_id,
+        velocidad: dto.velocidad ?? 0,
         ultima_geocerca_id: dto.ultima_geocerca_id ?? null,
       },
     });
+
+    return created;
   }
 
-  /**
-   * Última posición por unidad.
-   * - Si se manda unidadId → solo esa unidad.
-   * - Si no, todas las unidades (una fila por unidad).
-   */
-  async getUltimas(unidadId?: number) {
-    if (unidadId) {
-      const ultimo = await this.prisma.gps.findFirst({
-        where: { unidad_id: unidadId },
-        orderBy: { fecha_registro: "desc" },
-      });
-      return ultimo ? [ultimo] : [];
-    }
+  async getUltimos(unidadId?: number): Promise<GpsUltimoRow[]> {
+    const filtroUnidad = unidadId ? `AND g.unidad_id = ${Number(unidadId)}` : "";
 
-    // Todas las filas ordenadas por unidad_id y fecha desc
-    const all = await this.prisma.gps.findMany({
-      orderBy: [{ unidad_id: "asc" }, { fecha_registro: "desc" }],
+    const sql = `
+      SELECT DISTINCT ON (g.unidad_id)
+        g.gps_id,
+        g.unidad_id,
+        g.latitud,
+        g.longitud,
+        g.velocidad,
+        g.fecha_registro,
+        u.nombre AS "unidadNombre",
+        u.placa  AS "placa"
+      FROM gps g
+      JOIN unidades u
+        ON u.unidad_id = g.unidad_id
+      WHERE 1=1
+        ${filtroUnidad}
+      ORDER BY g.unidad_id, g.fecha_registro DESC;
+    `;
+
+    const gpsRows = await this.prisma.$queryRawUnsafe<GpsUltimoRow[]>(sql);
+
+    // ⬇️ AQUÍ ES DONDE CAMBIAMOS LA LÓGICA DE JORNADA ACTIVA
+    const jornadasActivas = await this.prisma.jornada.findMany({
+      where: {
+        // antes: hora_fin: null
+        fin_jornada: null,
+        horometro_fin: null,
+        ...(unidadId ? { unidad_id: unidadId } : {}),
+      },
+      select: { unidad_id: true },
     });
 
-    // Nos quedamos con la primera fila de cada unidad
-    const map = new Map<number, any>();
-    for (const row of all) {
-      if (!map.has(row.unidad_id)) {
-        map.set(row.unidad_id, row);
-      }
+    const unidadesActivasSet = new Set(
+      jornadasActivas.map((j) => j.unidad_id),
+    );
+
+    if (unidadesActivasSet.size === 0) {
+      return []; // 👈 si no hay jornadas activas, no mostramos nada
     }
 
-    return Array.from(map.values());
+    return gpsRows.filter((row) => unidadesActivasSet.has(row.unidad_id));
   }
 
-  /**
-   * Historial de una unidad (por rango de fechas).
-   */
   async getHistory(query: GpsHistoryQueryDto) {
-    const { unidadId, desde, hasta, limit } = query;
-
-    const where: any = {
-      unidad_id: unidadId,
-    };
-
-    if (desde || hasta) {
-      where.fecha_registro = {};
-      if (desde) where.fecha_registro.gte = new Date(desde);
-      if (hasta) where.fecha_registro.lte = new Date(hasta);
-    }
-
     return this.prisma.gps.findMany({
-      where,
-      orderBy: { fecha_registro: "asc" },
-      take: limit ?? 500,
+      where: {
+        unidad_id: query.unidadId ? Number(query.unidadId) : undefined,
+        fecha_registro: {
+          gte: query.desde ? new Date(query.desde) : undefined,
+          lte: query.hasta ? new Date(query.hasta) : undefined,
+        },
+      },
+      orderBy: { fecha_registro: "desc" },
+      take: query.limit ? Number(query.limit) : 500,
     });
   }
 }
+
+

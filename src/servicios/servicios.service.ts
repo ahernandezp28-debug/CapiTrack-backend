@@ -1,88 +1,153 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+// src/servicio/servicio.service.ts
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateServicioDto } from './dto/create-servicio.dto';
-import { UpdateServicioDto } from './dto/update-servicio.dto';
+
+type DbUserLike = {
+  usuario_id: number;
+  rol_id: number;
+  proveedor_id?: number | null;
+};
 
 @Injectable()
-export class ServiciosService {
-  constructor(private prisma: PrismaService) {}
+export class ServicioService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  // Crear servicio
-  async create(dto: CreateServicioDto, dbUser: any) {
-    const unidad = await this.prisma.unidad.findUnique({
-      where: { unidad_id: dto.unidad_id },
-    });
+  /**
+   * Resuelve el usuario interno (tabla usuarios) a partir de lo que venga en req.user:
+   * - Si ya trae rol_id / usuario_id → lo usa directo
+   * - Si trae appUser → lo usa
+   * - Si es solo el token Firebase → busca por correo en Prisma
+   */
+  private async getDbUserFromReq(reqUser: any): Promise<DbUserLike> {
+    if (!reqUser) {
+      throw new ForbiddenException('Usuario sin rol');
+    }
 
-    if (!unidad) throw new NotFoundException('Unidad no encontrada');
+    // Caso 1: ya es un usuario interno
+    if (
+      typeof reqUser.usuario_id === 'number' &&
+      typeof reqUser.rol_id === 'number'
+    ) {
+      return {
+        usuario_id: reqUser.usuario_id,
+        rol_id: reqUser.rol_id,
+        proveedor_id: reqUser.proveedor_id ?? null,
+      };
+    }
 
-    // Operador solo puede registrar servicios a su unidad
-    if (dbUser.rol_id === 2 && unidad.usuario_operador_id !== dbUser.usuario_id)
-      throw new ForbiddenException('No puede registrar servicios en una unidad que no opera');
+    // Caso 2: viene como { auth, appUser }
+    const appUser = reqUser.appUser ?? reqUser.dbUser ?? null;
+    if (
+      appUser &&
+      typeof appUser.usuario_id === 'number' &&
+      typeof appUser.rol_id === 'number'
+    ) {
+      return {
+        usuario_id: appUser.usuario_id,
+        rol_id: appUser.rol_id,
+        proveedor_id: appUser.proveedor_id ?? null,
+      };
+    }
 
-    // Encargado solo en unidades de su proveedor
-    if (dbUser.rol_id === 4 && unidad.proveedor_id !== dbUser.proveedor_id)
-      throw new ForbiddenException('No puede registrar servicios en otra flotilla');
+    // Caso 3: es un token Firebase (tiene email pero no rol_id)
+    const email: string | undefined = reqUser.email;
+    if (email) {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { correo: email },
+      });
 
-    return this.prisma.servicio.create({
+      if (!usuario) {
+        throw new ForbiddenException(
+          'Usuario interno no encontrado para este token',
+        );
+      }
+
+      return {
+        usuario_id: usuario.usuario_id,
+        rol_id: usuario.rol_id,
+        // si tu modelo Usuario tiene proveedor_id:
+        proveedor_id: (usuario as any).proveedor_id ?? null,
+      };
+    }
+
+    throw new ForbiddenException('Usuario sin rol');
+  }
+
+  // 🟢 Crear servicio (operador pide servicio)
+  async create(dto: CreateServicioDto, reqUser: any) {
+    const dbUser = await this.getDbUserFromReq(reqUser);
+
+    const servicio = await this.prisma.servicio.create({
       data: {
-        ...dto,
+        tipo: dto.tipo,
+        descripcion: dto.descripcion ?? null,
+        fecha: new Date(),
+        unidad_id: dto.unidad_id, // asumes que el operador la manda
         usuario_id: dbUser.usuario_id,
       },
     });
-  }
-
-  async findAll(dbUser: any) {
-    return this.prisma.servicio.findMany({
-      include: { unidad: true, usuario: true },
-    });
-  }
-
-  async findOne(id: number, dbUser: any) {
-    const servicio = await this.prisma.servicio.findUnique({
-      where: { servicio_id: id },
-      include: { unidad: true, usuario: true },
-    });
-
-    if (!servicio) throw new NotFoundException('Servicio no encontrado');
-
-    const unidad = servicio.unidad;
-
-    if (dbUser.rol_id === 2 && unidad.usuario_operador_id !== dbUser.usuario_id)
-      throw new ForbiddenException('No tiene permiso');
-
-    if (dbUser.rol_id === 4 && unidad.proveedor_id !== dbUser.proveedor_id)
-      throw new ForbiddenException('No tiene permiso');
 
     return servicio;
   }
 
-  async update(id: number, dto: UpdateServicioDto, dbUser: any) {
-    const servicio = await this.prisma.servicio.findUnique({
-      where: { servicio_id: id },
-      include: { unidad: true },
-    });
+  // 🔵 Listar servicios (admin / encargado / operador)
+  async findAll(reqUser: any) {
+    const dbUser = await this.getDbUserFromReq(reqUser);
+    const { rol_id, usuario_id, proveedor_id } = dbUser;
 
-    if (!servicio) throw new NotFoundException('Servicio no encontrado');
+    const baseInclude = {
+      unidad: true,
+      usuario: true,
+    } as const;
 
-    if (dbUser.rol_id === 2) {
-      throw new ForbiddenException('Operador no puede modificar servicios');
+    // 1️⃣ Admin ve todos
+    if (rol_id === 1) {
+      const rows = await this.prisma.servicio.findMany({
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
+      });
+      return rows.map(mapServicioRow);
     }
 
-    if (dbUser.rol_id === 4 && servicio.unidad.proveedor_id !== dbUser.proveedor_id) {
-      throw new ForbiddenException('No puede modificar servicios de otra flotilla');
+    // 2️⃣ Encargado ve solo unidades de su proveedor
+    if (rol_id === 4 && proveedor_id) {
+      const rows = await this.prisma.servicio.findMany({
+        where: {
+          unidad: {
+            proveedor_id,
+          },
+        },
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
+      });
+      return rows.map(mapServicioRow);
     }
 
-    return this.prisma.servicio.update({
-      where: { servicio_id: id },
-      data: dto,
-    });
-  }
+    // 3️⃣ Operador ve sus solicitudes
+    if (rol_id === 2) {
+      const rows = await this.prisma.servicio.findMany({
+        where: { usuario_id },
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
+      });
+      return rows.map(mapServicioRow);
+    }
 
-  async remove(id: number, dbUser: any) {
-    if (dbUser.rol_id !== 1)
-      throw new ForbiddenException('Solo administradores pueden borrar servicios');
-
-    return this.prisma.servicio.delete({ where: { servicio_id: id } });
+    throw new ForbiddenException('Rol no autorizado para ver servicios');
   }
 }
 
+function mapServicioRow(row: any) {
+  return {
+    servicio_id: row.servicio_id,
+    tipo: row.tipo,
+    descripcion: row.descripcion,
+    fecha: row.fecha,
+    unidad_id: row.unidad_id,
+    usuario_id: row.usuario_id,
+    unidad_nombre: row.unidad?.nombre ?? null,
+    unidad_placa: row.unidad?.placa ?? null,
+    operador_nombre: row.usuario?.nombre ?? null,
+  };
+}

@@ -1,35 +1,43 @@
-import {
-  Controller,
-  Post,
-  Patch,
-  Get,
-  Body,
-  Param,
-  Req,
-  ParseIntPipe,
-  UseGuards,
-} from '@nestjs/common';
-import { JornadasService } from './jornada.service';
+// src/jornada/jornada.controller.ts
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { JornadaService } from './jornada.service';
+import { IniciarJornadaDto } from './dto/iniciar-jornada.dto';
+import { FinalizarJornadaDto } from './dto/finalizar-jornada.dto';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
-import { CreateJornadaDto } from './dto/create-jornada.dto';
 
 @Controller('jornadas')
-@UseGuards(FirebaseAuthGuard)
-export class JornadasController {
-  constructor(private readonly service: JornadasService) {}
+@UseGuards(FirebaseAuthGuard) // 👈 protegemos TODO el controlador
+export class JornadaController {
+  constructor(private readonly jornadaService: JornadaService) {}
 
-  @Post()
-  crear(@Req() req, @Body() dto: CreateJornadaDto) {
-    return this.service.create(dto, req['dbUser']);
+  @Post('inicio')
+  async inicio(@Req() req: any, @Body() dto: IniciarJornadaDto) {
+    const user = req.user;
+
+    // 🔍 tratamos de sacar el email igual que en /usuarios/profile/me
+    const email =
+      user?.email ??
+      user?.correo ?? // por si lo mapeaste así
+      user?.decodedToken?.email ??
+      user?.auth?.email ??
+      null;
+
+    return this.jornadaService.iniciarJornada(dto, email);
   }
 
-  @Get()
-  listar(@Req() req) {
-    return this.service.findAll(req['dbUser']);
-  }
+  @Post('fin')
+  async fin(@Req() req: any, @Body() dto: FinalizarJornadaDto) {
+    const user = req.user;
 
-  @Patch(':id/finalizar')
-  finalizar(@Req() req, @Param('id', ParseIntPipe) id: number) {
-    return this.service.finalizar(id, req['dbUser']);
+    const email =
+      user?.email ??
+      user?.correo ??
+      user?.decodedToken?.email ??
+      user?.auth?.email ??
+      null;
+
+    return this.jornadaService.finalizarJornada(dto, email);
   }
 }
+
+

@@ -1,14 +1,17 @@
-import { IsString, IsOptional, IsInt } from "class-validator";
+import { IsString, IsOptional, IsInt, IsIn, IsNotEmpty, IsNumber } from "class-validator";
 
 export class CreateUnidadDto {
 
-  @IsString()
+   @IsString()
+  @IsNotEmpty()
   nombre: string;
 
   @IsString()
+  @IsIn(["CAMION", "MAQUINARIA"])
   tipo: string;
 
   @IsString()
+  @IsIn(["DIESEL", "GASOLINA", "ELECTRICO", "OTROS"])
   tipo_combustible: string;
 
   @IsString()
@@ -21,6 +24,10 @@ export class CreateUnidadDto {
   @IsOptional()
   @IsInt()
   usuario_operador_id?: number;
+
+    // ⬇️ NUEVO
+  @IsNumber()
+  costo_hora: number;
 
   @IsOptional()
   @IsString()

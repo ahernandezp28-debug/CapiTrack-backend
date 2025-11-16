@@ -9,7 +9,7 @@ import { ServiciosModule } from './servicios/servicios.module';
 import { JornadasModule } from './jornada/jornada.module';
 import { IncidentesModule } from './incidentes/incidentes.module';
 import { GpsModule } from './gps/gps.module';
-import { ReportesModule } from './reporte/reporte.module';
+import { ReporteModule } from './reporte/reporte.module';
 import { GeocercasModule } from './geocercas/geocercas.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { NotificationsModule } from './notifications/notifications.module'; 
@@ -25,7 +25,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     JornadasModule,
     IncidentesModule,
     GpsModule,
-    ReportesModule,
+    ReporteModule,
     GeocercasModule,
     AlertasModule,
     NotificationsModule, // ✅ Y aquí también

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsInt } from 'class-validator';
+import { IsNotEmpty, IsString, IsInt } from "class-validator";
 
 export class CreateIncidenteDto {
   @IsString()
@@ -11,7 +11,7 @@ export class CreateIncidenteDto {
 
   @IsString()
   @IsNotEmpty()
-  severidad: string;
+  severidad: string; // leve / media / alta
 
   @IsInt()
   unidad_id: number;

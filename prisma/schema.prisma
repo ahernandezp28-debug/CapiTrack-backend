@@ -45,8 +45,7 @@ model Usuario {
   estado         Boolean  @default(true)
   creado_en      DateTime @default(now())
   actualizado_en DateTime @updatedAt
-  firebaseUid String? @unique
-
+  firebaseUid    String?  @unique
 
   rol          Rol           @relation(fields: [rol_id], references: [rol_id])
   unidades     Unidad[]      @relation("OperadorUnidad")
@@ -64,28 +63,62 @@ model Usuario {
 // ======================================================
 
 model Unidad {
-  unidad_id           Int     @id @default(autoincrement())
+  unidad_id           Int        @id @default(autoincrement())
   nombre              String
-  tipo                String // Tipo de unidad (camión, excavadora, pickup, etc.)
-  placa               String? @unique
-  tipo_combustible    String // Diésel, gasolina, eléctrico, etc.
-  estado              String // Activo, en mantenimiento, fuera de servicio, etc.
-  proveedor_id        Int?
+  tipo                String      // 👈 OJO: aquí String, ya no enum
+  placa               String?
+  tipo_combustible    String
+  estado              String
+  costo_hora Decimal @db.Decimal(10, 2) @default(0)
+
+  proveedor_id        Int
   usuario_operador_id Int?
 
-  proveedor    Proveedor?    @relation(fields: [proveedor_id], references: [proveedor_id])
-  operador     Usuario?      @relation("OperadorUnidad", fields: [usuario_operador_id], references: [usuario_id])
+  proveedor Proveedor? @relation(fields: [proveedor_id], references: [proveedor_id])
+
+  // Relación con Usuario (operador)
+  operador  Usuario?   @relation("OperadorUnidad", fields: [usuario_operador_id], references: [usuario_id])
+
+  // Relación con otros módulos
   servicios    Servicio[]
   reportes     Reporte[]
-  jornadas     Jornada[]
   combustibles Combustible[]
   gps          Gps[]
   alertas      Alerta[]
   incidentes   Incidente[]
   geocercas    Geocerca[]
+  jornadas     Jornada[]
 
   @@map("unidades")
 }
+
+model Jornada {
+  jornada_id   Int      @id @default(autoincrement())
+  fecha        DateTime @default(now())
+
+  unidad_id    Int
+  operador_id  Int
+
+  // Para CAMION (tiempo)
+  inicio_jornada DateTime?
+  fin_jornada    DateTime?
+
+  // Para MAQUINARIA (horómetro)
+  horometro_inicio Decimal?
+  horometro_fin    Decimal?
+
+  // Común
+  total_horas  Decimal?
+  costo_hora   Decimal
+  total_pagar  Decimal?
+
+  unidad   Unidad  @relation(fields: [unidad_id], references: [unidad_id])
+  operador Usuario @relation(fields: [operador_id], references: [usuario_id])
+
+  @@map("jornadas")
+}
+
+
 
 // ======================================================
 //  MÓDULO DE SERVICIOS Y REPORTES
@@ -144,12 +177,12 @@ model Combustible {
 
 // --- GPS ---
 model Gps {
-  gps_id         Int      @id @default(autoincrement())
-  latitud        Float
-  longitud       Float
-  velocidad      Float?
-  fecha_registro DateTime @default(now())
-  unidad_id      Int
+  gps_id             Int      @id @default(autoincrement())
+  latitud            Float
+  longitud           Float
+  velocidad          Float?
+  fecha_registro     DateTime @default(now())
+  unidad_id          Int
   ultima_geocerca_id Int?
 
   unidad Unidad @relation(fields: [unidad_id], references: [unidad_id])
@@ -165,29 +198,14 @@ model Alerta {
   prioridad      String
   fecha_generada DateTime @default(now())
   unidad_id      Int
-  
 
   unidad Unidad @relation(fields: [unidad_id], references: [unidad_id])
 
   @@map("alertas")
 }
 
-// --- Jornada ---
-model Jornada {
-  jornada_id    Int      @id @default(autoincrement())
-  fecha         DateTime
-  hora_inicio   DateTime
-  hora_fin      DateTime
-  horas_trabajo Float?
-  observacion   String?
-  unidad_id     Int
-  usuario_id    Int
 
-  unidad  Unidad  @relation(fields: [unidad_id], references: [unidad_id])
-  usuario Usuario @relation(fields: [usuario_id], references: [usuario_id])
 
-  @@map("jornadas")
-}
 
 // --- Incidente ---
 model Incidente {

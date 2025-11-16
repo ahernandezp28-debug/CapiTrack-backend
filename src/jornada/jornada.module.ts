@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
-import { JornadasService } from './jornada.service';
-import { JornadasController } from './jornada.controller';
+import { JornadaService } from './jornada.service';
+import { JornadaController } from './jornada.controller';
 import { FirebaseModule } from '../firebase/firebase.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule, FirebaseModule],
-  controllers: [JornadasController],
-  providers: [JornadasService]
+  controllers: [JornadaController],
+  providers: [JornadaService]
 })
 export class JornadasModule {}
 

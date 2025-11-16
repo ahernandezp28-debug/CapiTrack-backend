@@ -1,94 +1,148 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+// src/incidente/incidente.service.ts
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateIncidenteDto } from './dto/create-incidente.dto';
-import { UpdateIncidenteDto } from './dto/update-incidente.dto';
+
+type DbUserLike = {
+  usuario_id: number;
+  rol_id: number;
+  proveedor_id?: number | null;
+};
 
 @Injectable()
-export class IncidentesService {
-  constructor(private prisma: PrismaService) {}
+export class IncidenteService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateIncidenteDto, dbUser: any) {
-    const { rol_id, usuario_id } = dbUser;
-
-    // Los operadores pueden reportar solo en sus unidades
-    if (rol_id === 2) {
-      // Aseguramos que la unidad sea del operador
-      const unidad = await this.prisma.unidad.findUnique({
-        where: { unidad_id: dto.unidad_id },
-      });
-
-      if (!unidad || unidad.usuario_operador_id !== usuario_id) {
-        throw new ForbiddenException('No puede registrar incidentes en otras unidades');
-      }
+  private async getDbUserFromReq(reqUser: any): Promise<DbUserLike> {
+    if (!reqUser) {
+      throw new ForbiddenException('Usuario sin rol');
     }
 
-    return this.prisma.incidente.create({
-      data: {
-        ...dto,
-        usuario_id,
-      },
-    });
+    // Caso 1: ya es usuario interno
+    if (
+      typeof reqUser.usuario_id === 'number' &&
+      typeof reqUser.rol_id === 'number'
+    ) {
+      return {
+        usuario_id: reqUser.usuario_id,
+        rol_id: reqUser.rol_id,
+        proveedor_id: reqUser.proveedor_id ?? null,
+      };
+    }
+
+    // Caso 2: { auth, appUser }
+    const appUser = reqUser.appUser ?? reqUser.dbUser ?? null;
+    if (
+      appUser &&
+      typeof appUser.usuario_id === 'number' &&
+      typeof appUser.rol_id === 'number'
+    ) {
+      return {
+        usuario_id: appUser.usuario_id,
+        rol_id: appUser.rol_id,
+        proveedor_id: appUser.proveedor_id ?? null,
+      };
+    }
+
+    // Caso 3: token Firebase con email
+    const email: string | undefined = reqUser.email;
+    if (email) {
+      const usuario = await this.prisma.usuario.findFirst({
+        where: { correo: email },
+      });
+
+      if (!usuario) {
+        throw new ForbiddenException(
+          'Usuario interno no encontrado para este token',
+        );
+      }
+
+      return {
+        usuario_id: usuario.usuario_id,
+        rol_id: usuario.rol_id,
+        proveedor_id: (usuario as any).proveedor_id ?? null,
+      };
+    }
+
+    throw new ForbiddenException('Usuario sin rol');
   }
 
-  async findAll(dbUser: any) {
+  // 🟢 Crear incidente
+  async create(dto: CreateIncidenteDto, reqUser: any) {
+    const dbUser = await this.getDbUserFromReq(reqUser);
+
+    const incidente = await this.prisma.incidente.create({
+      data: {
+        tipo: dto.tipo,
+        descripcion: dto.descripcion,
+        severidad: dto.severidad,
+        fecha: new Date(),
+        unidad_id: dto.unidad_id,
+        usuario_id: dbUser.usuario_id,
+      },
+    });
+
+    return incidente;
+  }
+
+  // 🔵 Listar incidentes
+  async findAll(reqUser: any) {
+    const dbUser = await this.getDbUserFromReq(reqUser);
     const { rol_id, usuario_id, proveedor_id } = dbUser;
 
+    const baseInclude = {
+      unidad: true,
+      usuario: true,
+    } as const;
+
+    // 1️⃣ Admin ve todos
     if (rol_id === 1) {
-      return this.prisma.incidente.findMany({
-        include: { unidad: true, usuario: true },
+      const rows = await this.prisma.incidente.findMany({
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
       });
+      return rows.map(mapIncidenteRow);
     }
 
-    if (rol_id === 4) {
-      return this.prisma.incidente.findMany({
+    // 2️⃣ Encargado: unidades de su proveedor
+    if (rol_id === 4 && proveedor_id) {
+      const rows = await this.prisma.incidente.findMany({
         where: {
           unidad: {
             proveedor_id,
           },
         },
-        include: { unidad: true, usuario: true },
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
       });
+      return rows.map(mapIncidenteRow);
     }
 
-    return this.prisma.incidente.findMany({
-      where: { usuario_id },
-      include: { unidad: true, usuario: true },
-    });
+    // 3️⃣ Operador: solo sus incidentes
+    if (rol_id === 2) {
+      const rows = await this.prisma.incidente.findMany({
+        where: { usuario_id },
+        include: baseInclude,
+        orderBy: { fecha: 'desc' },
+      });
+      return rows.map(mapIncidenteRow);
+    }
+
+    throw new ForbiddenException('Rol no autorizado para ver incidentes');
   }
+}
 
-  async findOne(id: number, dbUser: any) {
-    const incidente = await this.prisma.incidente.findUnique({
-      where: { incidente_id: id },
-      include: { unidad: true, usuario: true },
-    });
-
-    if (!incidente) throw new NotFoundException('Incidente no encontrado');
-
-    const { rol_id, usuario_id, proveedor_id } = dbUser;
-
-    if (rol_id === 1) return incidente;
-    if (rol_id === 4 && incidente.unidad.proveedor_id === proveedor_id) return incidente;
-    if (rol_id === 2 && incidente.usuario_id === usuario_id) return incidente;
-
-    throw new ForbiddenException('Acceso denegado');
-  }
-
-  async update(id: number, dto: UpdateIncidenteDto, dbUser: any) {
-    const incidente = await this.findOne(id, dbUser);
-    return this.prisma.incidente.update({
-      where: { incidente_id: id },
-      data: dto,
-    });
-  }
-
-  async remove(id: number, dbUser: any) {
-    const incidente = await this.findOne(id, dbUser);
-
-    if (dbUser.rol_id !== 1)
-      throw new ForbiddenException('No tiene permisos para eliminar');
-
-    return this.prisma.incidente.delete({
-      where: { incidente_id: id },
-    });
-  }
+function mapIncidenteRow(row: any) {
+  return {
+    incidente_id: row.incidente_id,
+    tipo: row.tipo,
+    descripcion: row.descripcion,
+    fecha: row.fecha,
+    severidad: row.severidad,
+    unidad_id: row.unidad_id,
+    usuario_id: row.usuario_id,
+    unidad_nombre: row.unidad?.nombre ?? null,
+    unidad_placa: row.unidad?.placa ?? null,
+    operador_nombre: row.usuario?.nombre ?? null,
+  };
 }

@@ -1,18 +1,13 @@
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, IsInt } from "class-validator";
 
 export class CreateServicioDto {
   @IsString()
   @IsNotEmpty()
   tipo: string;
 
-  @IsDateString()
-  fecha: string;
-
-  @IsOptional()
   @IsString()
-  descripcion?: string;
+  descripcion: string;
 
   @IsInt()
   unidad_id: number;
 }
-

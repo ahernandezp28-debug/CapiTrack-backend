@@ -1,12 +1,11 @@
+// src/reporte/reporte.module.ts
 import { Module } from '@nestjs/common';
-import { ReportesService } from './reporte.service';
-import { ReportesController } from './reporte.controller';
-import { PrismaModule } from '../../prisma/prisma.module';
-import { FirebaseModule } from '../firebase/firebase.module';
+import { ReporteController } from './reporte.controller';
+import { ReporteService } from './reporte.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Module({
-  imports: [PrismaModule, FirebaseModule],
-  controllers: [ReportesController],
-  providers: [ReportesService],
+  controllers: [ReporteController],
+  providers: [ReporteService, PrismaService],
 })
-export class ReportesModule {}
+export class ReporteModule {}

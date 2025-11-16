@@ -1,43 +1,41 @@
+// src/reporte/reporte.controller.ts
 import {
-  Controller, Post, Body, Param, Patch, Delete, ParseIntPipe, Req,
-  Get, UseGuards, HttpCode, HttpStatus
+  Controller,
+  Get,
+  Query,
+  Res,
 } from '@nestjs/common';
-import { ReportesService } from './reporte.service';
-import { CreateReporteDto } from './dto/create-reporte.dto';
-import { UpdateReporteDto } from './dto/update-reporte.dto';
-import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
-import type { Request } from 'express';
+import type { Response } from 'express';
+import { ReporteService } from './reporte.service';
+import { JornadasReportQueryDto } from './dto/jornadas-report-query.dto';
 
-@UseGuards(FirebaseAuthGuard)
-@Controller('reportes')
-export class ReportesController {
-  constructor(private readonly reportesService: ReportesService) {}
+@Controller('reportes') // 👈 PLURAL: /reportes/...
+export class ReporteController {
+  constructor(private readonly reporteService: ReporteService) {}
 
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Req() req: Request, @Body() dto: CreateReporteDto) {
-    return this.reportesService.create(dto, req['dbUser']);
+  // Lista JSON para el dashboard
+  @Get('jornadas')
+  async jornadas(@Query() query: JornadasReportQueryDto) {
+    return this.reporteService.jornadasResumen(query);
   }
 
-  @Get()
-  async findAll(@Req() req: Request) {
-    return this.reportesService.findAll(req['dbUser']);
-  }
+  // Descarga Excel
+  @Get('jornadas/excel')
+  async jornadasExcel(
+    @Query() query: JornadasReportQueryDto,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.reporteService.exportJornadasExcel(query);
 
-  @Get(':id')
-  async findOne(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    return this.reportesService.findOne(id, req['dbUser']);
-  }
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="reporte_jornadas.xlsx"',
+    );
 
-  @Patch(':id')
-  async update(@Req() req: Request, @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateReporteDto) {
-    return this.reportesService.update(id, dto, req['dbUser']);
-  }
-
-  @Delete(':id')
-  async remove(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    return this.reportesService.remove(id, req['dbUser']);
+    res.end(buffer);
   }
 }
-

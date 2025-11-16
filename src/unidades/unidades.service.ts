@@ -1,8 +1,8 @@
+// src/unidades/unidades.service.ts
 import {
   Injectable,
   ForbiddenException,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUnidadDto } from './dto/create-unidade.dto';
@@ -13,24 +13,24 @@ export class UnidadesService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ======================================================
-// 🟢 Crear una nueva unidad (versión mejorada)
-// ======================================================
+  // 🟢 Crear una nueva unidad
+  // ======================================================
 async create(createUnidadDto: CreateUnidadDto, dbUser: any) {
-  const { rol_id, usuario_id, proveedor_id } = dbUser;
+  const { rol_id, proveedor_id } = dbUser;
 
-  // 🔒 1. Los operadores no pueden crear unidades
+  // 🔒 Operador no puede crear unidades
   if (rol_id === 2) {
     throw new ForbiddenException('Los operadores no pueden crear unidades');
   }
 
-  // 🔒 2. Encargado de flotilla debe tener proveedor asignado
+  // 🔒 Encargado de flotilla necesita proveedor asignado
   if (rol_id === 4 && !proveedor_id) {
     throw new ForbiddenException(
       'El encargado de flotilla no tiene proveedor asignado'
     );
   }
 
-  // 🔒 3. Si el usuario operador_id es requerido, debe existir en la base de datos
+  // 🔒 Validar operador asignado
   if (createUnidadDto.usuario_operador_id) {
     const operador = await this.prisma.usuario.findUnique({
       where: { usuario_id: createUnidadDto.usuario_operador_id },
@@ -43,25 +43,39 @@ async create(createUnidadDto: CreateUnidadDto, dbUser: any) {
     }
   }
 
-  // 🔒 4. Si el rol es encargado de flotilla, forzamos el proveedor_id
+  // 🔒 Encargado de flotilla → forzar proveedor
   if (rol_id === 4) {
     createUnidadDto.proveedor_id = proveedor_id;
   }
 
-  // 🔒 5. Si no hay operador asignado, rechazamos
+  // 🔒 Debe tener operador
   if (!createUnidadDto.usuario_operador_id) {
-    throw new ForbiddenException(
-      'Debe asignar un operador (usuario con rol de Operador)'
-    );
+    throw new ForbiddenException('Debe asignar un operador');
   }
 
-  // ✅ 6. Crear la unidad
-  return this.prisma.unidad.create({
-    data: {
-      ...createUnidadDto,
-    },
-  });
+  // ================
+  // 🔧 ARREGLO AQUÍ
+  // ================
+  // Solo agregamos los campos que realmente tienen valor (sin undefined)
+  const data: any = {
+    nombre: createUnidadDto.nombre,
+    tipo: createUnidadDto.tipo,
+    tipo_combustible: createUnidadDto.tipo_combustible,
+    estado: createUnidadDto.estado,
+    costo_hora: createUnidadDto.costo_hora, // ya es obligatorio
+    usuario_operador_id: createUnidadDto.usuario_operador_id,
+  };
+
+  if (createUnidadDto.placa) data.placa = createUnidadDto.placa;
+  if (createUnidadDto.proveedor_id != null)
+    data.proveedor_id = createUnidadDto.proveedor_id;
+
+  // ==================
+  // CREAR UNIDAD
+  // ==================
+  return this.prisma.unidad.create({ data });
 }
+
 
   // ======================================================
   // 🔵 Obtener todas las unidades
@@ -118,95 +132,90 @@ async create(createUnidadDto: CreateUnidadDto, dbUser: any) {
   }
 
   // ======================================================
-// 🟠 Actualizar una unidad (versión validada)
-// ======================================================
-async update(id: number, updateUnidadDto: UpdateUnidadDto, dbUser: any) {
-  const unidad = await this.prisma.unidad.findUnique({
-    where: { unidad_id: id },
-  });
-
-  if (!unidad) {
-    throw new NotFoundException('Unidad no encontrada');
-  }
-
-  const { rol_id, usuario_id, proveedor_id } = dbUser;
-
-  // 🔒 1. Operadores no pueden modificar unidades
-  if (rol_id === 2) {
-    throw new ForbiddenException('Los operadores no pueden modificar unidades');
-  }
-
-  // 🔒 2. Encargado de flotilla solo puede modificar unidades de su proveedor
-  if (rol_id === 4 && unidad.proveedor_id !== proveedor_id) {
-    throw new ForbiddenException(
-      'No puede modificar unidades de otros proveedores'
-    );
-  }
-
-  // 🔒 3. Si se intenta cambiar el operador, validar que sea un operador válido
-  if (updateUnidadDto.usuario_operador_id) {
-    const operador = await this.prisma.usuario.findUnique({
-      where: { usuario_id: updateUnidadDto.usuario_operador_id },
+  // 🟠 Actualizar una unidad
+  // ======================================================
+  async update(id: number, updateUnidadDto: UpdateUnidadDto, dbUser: any) {
+    const unidad = await this.prisma.unidad.findUnique({
+      where: { unidad_id: id },
     });
 
-    if (!operador || operador.rol_id !== 2) {
+    if (!unidad) {
+      throw new NotFoundException('Unidad no encontrada');
+    }
+
+    const { rol_id, usuario_id, proveedor_id } = dbUser;
+
+    // 🔒 1. Operadores no pueden modificar unidades
+    if (rol_id === 2) {
+      throw new ForbiddenException('Los operadores no pueden modificar unidades');
+    }
+
+    // 🔒 2. Encargado de flotilla solo puede modificar unidades de su proveedor
+    if (rol_id === 4 && unidad.proveedor_id !== proveedor_id) {
       throw new ForbiddenException(
-        'El usuario asignado como operador no es válido o no existe'
+        'No puede modificar unidades de otros proveedores',
       );
     }
+
+    // 🔒 3. Si se intenta cambiar el operador, validar que sea un operador válido
+    if (updateUnidadDto.usuario_operador_id) {
+      const operador = await this.prisma.usuario.findUnique({
+        where: { usuario_id: updateUnidadDto.usuario_operador_id },
+      });
+
+      if (!operador || operador.rol_id !== 2) {
+        throw new ForbiddenException(
+          'El usuario asignado como operador no es válido o no existe',
+        );
+      }
+    }
+
+    // 🔒 4. No permitir dejar la unidad sin operador
+    if (updateUnidadDto.usuario_operador_id === null) {
+      throw new ForbiddenException('La unidad debe tener un operador asignado');
+    }
+
+    // ✅ 5. Actualizar la unidad (incluye costo_hora si viene)
+    return this.prisma.unidad.update({
+      where: { unidad_id: id },
+      data: updateUnidadDto,
+    });
   }
-
-  // 🔒 4. No permitir dejar la unidad sin operador
-  if (updateUnidadDto.usuario_operador_id === null) {
-    throw new ForbiddenException('La unidad debe tener un operador asignado');
-  }
-
-  // ✅ 5. Actualizar la unidad
-  return this.prisma.unidad.update({
-    where: { unidad_id: id },
-    data: updateUnidadDto,
-  });
-}
-
 
   // ======================================================
+  // 🔴 Eliminar una unidad (con borrado en cascada)
   // ======================================================
-// 🔴 Eliminar una unidad (con borrado en cascada)
-// ======================================================
-async remove(id: number, dbUser: any) {
-  if (!dbUser || dbUser.rol_id == null) {
-    throw new ForbiddenException('Usuario no autenticado o sin rol');
+  async remove(id: number, dbUser: any) {
+    if (!dbUser || dbUser.rol_id == null) {
+      throw new ForbiddenException('Usuario no autenticado o sin rol');
+    }
+
+    if (dbUser.rol_id !== 1) {
+      throw new ForbiddenException('Solo los administradores pueden eliminar unidades');
+    }
+
+    const unidad = await this.prisma.unidad.findUnique({
+      where: { unidad_id: id },
+    });
+
+    if (!unidad) {
+      throw new NotFoundException('Unidad no encontrada');
+    }
+
+    // 🧹 Borrar relaciones hijas primero para no romper FK
+    await this.prisma.$transaction([
+      this.prisma.gps.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.servicio.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.combustible.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.alerta.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.incidente.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.geocerca.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.jornada.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.reporte.deleteMany({ where: { unidad_id: id } }),
+      this.prisma.unidad.delete({ where: { unidad_id: id } }),
+    ]);
+
+    return { unidad_id: id };
   }
-
-  if (dbUser.rol_id !== 1) {
-    throw new ForbiddenException('Solo los administradores pueden eliminar unidades');
-  }
-
-  const unidad = await this.prisma.unidad.findUnique({
-    where: { unidad_id: id },
-  });
-
-  if (!unidad) {
-    throw new NotFoundException('Unidad no encontrada');
-  }
-
-  // 🧹 Borrar relaciones hijas primero para no romper FK
-  await this.prisma.$transaction([
-    this.prisma.gps.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.servicio.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.combustible.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.alerta.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.incidente.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.geocerca.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.jornada.deleteMany({ where: { unidad_id: id } }),
-    this.prisma.reporte.deleteMany({ where: { unidad_id: id } }),
-    // 👇 finalmente la unidad
-    this.prisma.unidad.delete({ where: { unidad_id: id } }),
-  ]);
-
-  return {
-    unidad_id: id,
-  };
 }
 
-}
