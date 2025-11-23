@@ -19,9 +19,11 @@ type GpsUltimoRow = {
 export class GpsService {
   constructor(private prisma: PrismaService) {}
 
-  // Guarda punto GPS enviado por el operador
+  // ======================================================
+  // 🟢 GUARDAR REPORTE GPS
+  // ======================================================
   async createReport(dto: CreateGpsReportDto) {
-    const created = await this.prisma.gps.create({
+    return await this.prisma.gps.create({
       data: {
         unidad_id: dto.unidad_id,
         latitud: dto.latitud,
@@ -30,10 +32,11 @@ export class GpsService {
         ultima_geocerca_id: dto.ultima_geocerca_id ?? null,
       },
     });
-
-    return created;
   }
 
+  // ======================================================
+  // 🟦 OBTENER ÚLTIMOS GPS SOLO DE UNIDADES CON JORNADA ACTIVA
+  // ======================================================
   async getUltimos(unidadId?: number): Promise<GpsUltimoRow[]> {
     const filtroUnidad = unidadId ? `AND g.unidad_id = ${Number(unidadId)}` : "";
 
@@ -48,8 +51,7 @@ export class GpsService {
         u.nombre AS "unidadNombre",
         u.placa  AS "placa"
       FROM gps g
-      JOIN unidades u
-        ON u.unidad_id = g.unidad_id
+      JOIN unidades u ON u.unidad_id = g.unidad_id
       WHERE 1=1
         ${filtroUnidad}
       ORDER BY g.unidad_id, g.fecha_registro DESC;
@@ -57,10 +59,9 @@ export class GpsService {
 
     const gpsRows = await this.prisma.$queryRawUnsafe<GpsUltimoRow[]>(sql);
 
-    // ⬇️ AQUÍ ES DONDE CAMBIAMOS LA LÓGICA DE JORNADA ACTIVA
-    const jornadasActivas = await this.prisma.jornada.findMany({
+    // Filtrar únicamente unidades con jornada activa
+    const jornadas = await this.prisma.jornada.findMany({
       where: {
-        // antes: hora_fin: null
         fin_jornada: null,
         horometro_fin: null,
         ...(unidadId ? { unidad_id: unidadId } : {}),
@@ -68,17 +69,16 @@ export class GpsService {
       select: { unidad_id: true },
     });
 
-    const unidadesActivasSet = new Set(
-      jornadasActivas.map((j) => j.unidad_id),
-    );
+    const activas = new Set(jornadas.map((j) => j.unidad_id));
 
-    if (unidadesActivasSet.size === 0) {
-      return []; // 👈 si no hay jornadas activas, no mostramos nada
-    }
+    if (activas.size === 0) return [];
 
-    return gpsRows.filter((row) => unidadesActivasSet.has(row.unidad_id));
+    return gpsRows.filter((row) => activas.has(row.unidad_id));
   }
 
+  // ======================================================
+  // 📜 HISTORIAL GPS
+  // ======================================================
   async getHistory(query: GpsHistoryQueryDto) {
     return this.prisma.gps.findMany({
       where: {
@@ -93,5 +93,3 @@ export class GpsService {
     });
   }
 }
-
-

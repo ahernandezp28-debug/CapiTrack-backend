@@ -1,12 +1,20 @@
 // src/jornada/jornada.controller.ts
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  UseGuards,
+  Get,
+  Param,
+} from '@nestjs/common';
 import { JornadaService } from './jornada.service';
 import { IniciarJornadaDto } from './dto/iniciar-jornada.dto';
 import { FinalizarJornadaDto } from './dto/finalizar-jornada.dto';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 
 @Controller('jornadas')
-@UseGuards(FirebaseAuthGuard) // 👈 protegemos TODO el controlador
+@UseGuards(FirebaseAuthGuard)
 export class JornadaController {
   constructor(private readonly jornadaService: JornadaService) {}
 
@@ -14,10 +22,9 @@ export class JornadaController {
   async inicio(@Req() req: any, @Body() dto: IniciarJornadaDto) {
     const user = req.user;
 
-    // 🔍 tratamos de sacar el email igual que en /usuarios/profile/me
     const email =
       user?.email ??
-      user?.correo ?? // por si lo mapeaste así
+      user?.correo ??
       user?.decodedToken?.email ??
       user?.auth?.email ??
       null;
@@ -38,6 +45,10 @@ export class JornadaController {
 
     return this.jornadaService.finalizarJornada(dto, email);
   }
+
+  // PARA CONSULTAR SI HAY JORNADA ACTIVA
+  @Get('active/:unidadId')
+  async getActiva(@Param('unidadId') unidadId: string) {
+    return this.jornadaService.getJornadaActiva(Number(unidadId));
+  }
 }
-
-

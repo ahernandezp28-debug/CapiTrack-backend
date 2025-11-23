@@ -38,6 +38,11 @@ export class JornadaService {
     return usuario;
   }
 
+  /**
+   * Inicia una jornada para la unidad asignada al operador autenticado.
+   * - Para MAQUINARIA requiere dto.horometro_inicio
+   * - Para CAMION no requiere horómetro
+   */
   async iniciarJornada(dto: IniciarJornadaDto, authEmail?: string | null) {
     const operador = await this.getOperadorByEmail(authEmail);
 
@@ -49,6 +54,7 @@ export class JornadaService {
       throw new NotFoundException('Unidad no encontrada');
     }
 
+    // Verificar que la unidad esté asignada al operador que intenta iniciar
     if (unidad.usuario_operador_id !== operador.usuario_id) {
       throw new ForbiddenException(
         'Esta unidad no está asignada a este operador',
@@ -71,9 +77,15 @@ export class JornadaService {
     }
 
     const now = new Date();
-    const tipo = (unidad.tipo ?? '').toUpperCase();
-    const costoHora = typeof unidad.costo_hora === 'number' ? unidad.costo_hora : 0;
+    const tipo = (unidad.tipo ?? '').toString().toUpperCase();
 
+    // costo_hora: preferimos el definido en la unidad (si existe), si no, 0
+    const costoHora =
+      typeof unidad.costo_hora === 'number'
+        ? unidad.costo_hora
+        : Number(unidad.costo_hora ?? 0);
+
+    // horómetro inicio puede ser número o null
     let horometroInicio: number | null = null;
 
     if (tipo === 'MAQUINARIA') {
@@ -82,16 +94,23 @@ export class JornadaService {
           'Debe indicar horómetro inicial para maquinaria',
         );
       }
-      horometroInicio = dto.horometro_inicio;
+      horometroInicio = Number(dto.horometro_inicio);
     }
 
+    // Crear la jornada. Para camión dejamos inicio_jornada; para maquinaria
+    // guardamos horometro_inicio y dejamos inicio_jornada null (opcional).
     const creada = await this.prisma.jornada.create({
       data: {
         fecha: now,
         unidad_id: unidad.unidad_id,
         operador_id: operador.usuario_id,
-        inicio_jornada: now,
+        // Para CAMION: inicio_jornada registra hora de inicio
+        inicio_jornada: tipo === 'MAQUINARIA' ? null : now,
+        // Para MAQUINARIA: guardamos horometro_inicio
         horometro_inicio: horometroInicio,
+        // fin_jornada y horometro_fin quedan en null hasta finalizar
+        fin_jornada: null,
+        horometro_fin: null,
         costo_hora: costoHora,
       },
     });
@@ -105,6 +124,11 @@ export class JornadaService {
     };
   }
 
+  /**
+   * Finaliza la jornada activa de la unidad para el operador autenticado.
+   * - Para MAQUINARIA requiere dto.horometro_fin
+   * - Para CAMION se calcula por tiempo entre inicio_jornada y ahora
+   */
   async finalizarJornada(dto: FinalizarJornadaDto, authEmail?: string | null) {
     const operador = await this.getOperadorByEmail(authEmail);
 
@@ -122,6 +146,7 @@ export class JornadaService {
       );
     }
 
+    // Buscamos la jornada activa (fin_jornada === null)
     const jornada = await this.prisma.jornada.findFirst({
       where: {
         unidad_id: unidad.unidad_id,
@@ -135,17 +160,21 @@ export class JornadaService {
     }
 
     const now = new Date();
-    const tipo = (unidad.tipo ?? '').toUpperCase();
-    const costoHora = typeof jornada.costo_hora === 'number'
-      ? jornada.costo_hora
-      : typeof unidad.costo_hora === 'number'
-      ? unidad.costo_hora
-      : 0;
+    const tipo = (unidad.tipo ?? '').toString().toUpperCase();
+
+    // Determinar costo_hora: preferimos el de la jornada (si ya tenía), si no el de la unidad
+    const costoHora =
+      typeof jornada.costo_hora === 'number'
+        ? jornada.costo_hora
+        : typeof unidad.costo_hora === 'number'
+        ? unidad.costo_hora
+        : Number(unidad.costo_hora ?? 0);
 
     let horas = 0;
-    let horometroFinToSave: number | null = jornada.horometro_fin as any;
+    let horometroFinToSave: number | null = null;
 
     if (tipo === 'MAQUINARIA') {
+      // Validaciones específicas
       if (dto.horometro_fin == null) {
         throw new BadRequestException(
           'Debe indicar horómetro final para maquinaria',
@@ -158,30 +187,33 @@ export class JornadaService {
       }
 
       const inicio = Number(jornada.horometro_inicio);
-      const fin = dto.horometro_fin;
-      const diff = fin - inicio;
+      const fin = Number(dto.horometro_fin);
 
-      if (diff < 0) {
+      if (fin < inicio) {
         throw new BadRequestException(
           'El horómetro final no puede ser menor al inicial',
         );
       }
 
-      horas = Number(diff.toFixed(2));
+      // Horas calculadas como diferencia de horómetro (puede ser decimal)
+      horas = Number((fin - inicio).toFixed(2));
       horometroFinToSave = fin;
     } else {
+      // CAMIÓN (por tiempo)
       if (!jornada.inicio_jornada) {
         throw new BadRequestException(
           'La jornada no tiene hora de inicio registrada',
         );
       }
+      // inicio_jornada existe aquí (comprobado arriba), TS no se queja ahora
       const diffMs = now.getTime() - jornada.inicio_jornada.getTime();
       const diffHoras = diffMs / (1000 * 60 * 60);
       horas = Number(diffHoras.toFixed(2));
     }
 
-    const totalPagar = Number((horas * costoHora).toFixed(2));
+    const totalPagar = Number((horas * Number(costoHora)).toFixed(2));
 
+    // Actualizamos la jornada: IMPORTANTÍSIMO setear fin_jornada para "cerrarla"
     const actualizada = await this.prisma.jornada.update({
       where: { jornada_id: jornada.jornada_id },
       data: {
@@ -198,5 +230,15 @@ export class JornadaService {
       total_horas: actualizada.total_horas,
       total_pagar: actualizada.total_pagar,
     };
+  }
+
+  // Obtener jornada activa para una unidad (usa solo fin_jornada === null)
+  async getJornadaActiva(unidad_id: number) {
+    return await this.prisma.jornada.findFirst({
+      where: {
+        unidad_id,
+        fin_jornada: null,
+      },
+    });
   }
 }
