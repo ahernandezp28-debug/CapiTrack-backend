@@ -1,117 +1,69 @@
 // src/usuarios/usuarios.service.ts
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { PrismaClient, Prisma, Usuario } from '@prisma/client';
-import { CreateUsuarioDto } from './dto/create-usuario.dto';
-import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import { UpdateUsuarioDto } from "./dto/update-usuario.dto";
 
 @Injectable()
 export class UsuariosService {
-  private prisma = new PrismaClient();
+  constructor(private prisma: PrismaService) {}
 
-  async create(createUsuarioDto: CreateUsuarioDto, dbUser: Usuario) {
-    // Solo admins pueden crear usuarios
-    if (dbUser.rol_id !== 1) {
-      throw new ForbiddenException('No tienes permisos para crear usuarios');
-    }
-
-    return this.prisma.usuario.create({
-      data: {
-        ...createUsuarioDto,
-        estado: true,
-        creado_en: new Date(),
-        actualizado_en: new Date(),
-      },
+  async findOperadores() {
+    return this.prisma.usuario.findMany({
+      where: { rol_id: 2, estado: true },
+      select: { usuario_id: true, nombre: true, correo: true, rol_id: true },
+      orderBy: { nombre: "asc" },
     });
   }
 
-  async findAll(params: { page?: number; limit?: number; q?: string }) {
-    const page = params.page || 1;
-    const limit = params.limit || 10;
-    const skip = (page - 1) * limit;
-
-    let where: Prisma.UsuarioWhereInput = {};
-
-    if (params.q) {
-      where = {
-        OR: [
-          { nombre: { contains: params.q, mode: 'insensitive' } },
-          { correo: { contains: params.q, mode: 'insensitive' } },
-        ],
-      };
-    }
-
-    const [usuarios, total] = await Promise.all([
-      this.prisma.usuario.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { usuario_id: 'asc' },
-        select: {
-          usuario_id: true,
-          nombre: true,
-          correo: true,
-          rol_id: true,
-          estado: true,
-          creado_en: true,
-          actualizado_en: true,
-        },
-      }),
-      this.prisma.usuario.count({ where }),
-    ]);
-
-    return {
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-      usuarios,
-    };
+  async findAdmins() {
+    return this.prisma.usuario.findMany({
+      where: { rol_id: 1, estado: true },
+      select: { usuario_id: true, nombre: true, correo: true, rol_id: true },
+      orderBy: { nombre: "asc" },
+    });
   }
 
-  async findOne(id: number) {
+  async updateUsuario(id: number, dto: UpdateUsuarioDto, requesterCorreo: string) {
+    const requester = await this.prisma.usuario.findUnique({ where: { correo: requesterCorreo } });
+    if (!requester) throw new NotFoundException("Usuario que realiza la petición no encontrado");
+
     const usuario = await this.prisma.usuario.findUnique({ where: { usuario_id: id } });
-    if (!usuario) throw new NotFoundException(`Usuario con id ${id} no encontrado`);
-    return usuario;
-  }
+    if (!usuario) throw new NotFoundException("Usuario a actualizar no encontrado");
 
-  async update(id: number, updateUsuarioDto: UpdateUsuarioDto, dbUser: Usuario) {
-    // Solo admins pueden actualizar otros usuarios
-    if (dbUser.rol_id !== 1) {
-      throw new ForbiddenException('No tienes permisos para actualizar usuarios');
+    if (typeof dto.rol_id === "number" && requester.rol_id !== 1) {
+      throw new ForbiddenException("Solo administradores pueden cambiar el rol de un usuario");
     }
 
-    return this.prisma.usuario.update({
+    const updated = await this.prisma.usuario.update({
       where: { usuario_id: id },
       data: {
-        ...updateUsuarioDto,
-        actualizado_en: new Date(),
+        nombre: dto.nombre ?? usuario.nombre,
+        correo: dto.correo ?? usuario.correo,
+        rol_id: typeof dto.rol_id === "number" ? dto.rol_id : usuario.rol_id,
       },
+      select: { usuario_id: true, nombre: true, correo: true, rol_id: true },
     });
+
+    return updated;
   }
 
-  async remove(id: number, dbUser: Usuario) {
-    // Solo admins pueden eliminar usuarios
-    if (dbUser.rol_id !== 1) {
-      throw new ForbiddenException('No tienes permisos para eliminar usuarios');
+  async deleteUsuario(id: number, requesterCorreo: string) {
+    const requester = await this.prisma.usuario.findUnique({ where: { correo: requesterCorreo } });
+    if (!requester) throw new NotFoundException("Usuario que realiza la petición no encontrado");
+
+    const usuario = await this.prisma.usuario.findUnique({ where: { usuario_id: id } });
+    if (!usuario) throw new NotFoundException("Usuario a eliminar no encontrado");
+
+    if (usuario.rol_id === 1) {
+      if (requester.rol_id !== 1) {
+        throw new ForbiddenException("No tienes permisos para eliminar administradores");
+      }
+      if (requester.usuario_id === usuario.usuario_id) {
+        throw new ForbiddenException("No puedes eliminar tu propia cuenta desde este endpoint");
+      }
     }
 
-    return this.prisma.usuario.delete({ where: { usuario_id: id } });
+    await this.prisma.usuario.delete({ where: { usuario_id: id } });
+    return true;
   }
-
-  // 👇 Operadores activos (rol_id = 2)
-async findOperadoresActivos() {
-  return this.prisma.usuario.findMany({
-    where: {
-      rol_id: 2,        // 2 = Operador
-      estado: true,     // solo activos
-    },
-    select: {
-      usuario_id: true,
-      nombre: true,
-      correo: true,
-    },
-  });
 }
-
-}
-

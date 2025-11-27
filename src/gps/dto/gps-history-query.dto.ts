@@ -1,11 +1,11 @@
-// src/gps/dto/gps-history-query.dto.ts
 import { IsDateString, IsInt, IsOptional, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 
 export class GpsHistoryQueryDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  unidadId: number;
+  unidadId?: number;
 
   @IsOptional()
   @IsDateString()

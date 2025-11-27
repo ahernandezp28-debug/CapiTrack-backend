@@ -1,4 +1,3 @@
-// src/gps/gps.service.ts
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CreateGpsReportDto } from "./dto/create-gps-report.dto";
@@ -19,11 +18,9 @@ type GpsUltimoRow = {
 export class GpsService {
   constructor(private prisma: PrismaService) {}
 
-  // ======================================================
-  // 🟢 GUARDAR REPORTE GPS
-  // ======================================================
+  // Guardar reporte GPS (usa el modelo prisma 'gps')
   async createReport(dto: CreateGpsReportDto) {
-    return await this.prisma.gps.create({
+    return this.prisma.gps.create({
       data: {
         unidad_id: dto.unidad_id,
         latitud: dto.latitud,
@@ -34,9 +31,11 @@ export class GpsService {
     });
   }
 
-  // ======================================================
-  // 🟦 OBTENER ÚLTIMOS GPS SOLO DE UNIDADES CON JORNADA ACTIVA
-  // ======================================================
+  /**
+   * Obtener últimos GPS (ultimo registro por unidad).
+   * Devuelve solo unidades que actualmente tienen jornada activa (fin_jornada IS NULL).
+   * Si unidadId se pasa, filtra por esa unidad.
+   */
   async getUltimos(unidadId?: number): Promise<GpsUltimoRow[]> {
     const filtroUnidad = unidadId ? `AND g.unidad_id = ${Number(unidadId)}` : "";
 
@@ -59,11 +58,10 @@ export class GpsService {
 
     const gpsRows = await this.prisma.$queryRawUnsafe<GpsUltimoRow[]>(sql);
 
-    // Filtrar únicamente unidades con jornada activa
+    // Filtrar únicamente unidades con jornada activa (fin_jornada === null)
     const jornadas = await this.prisma.jornada.findMany({
       where: {
         fin_jornada: null,
-        horometro_fin: null,
         ...(unidadId ? { unidad_id: unidadId } : {}),
       },
       select: { unidad_id: true },
@@ -76,9 +74,7 @@ export class GpsService {
     return gpsRows.filter((row) => activas.has(row.unidad_id));
   }
 
-  // ======================================================
-  // 📜 HISTORIAL GPS
-  // ======================================================
+  // Historial GPS (por unidad y rango de fechas)
   async getHistory(query: GpsHistoryQueryDto) {
     return this.prisma.gps.findMany({
       where: {

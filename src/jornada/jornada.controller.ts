@@ -1,4 +1,4 @@
-// src/jornada/jornada.controller.ts
+// File: src/jornada/jornada.controller.ts
 import {
   Body,
   Controller,
@@ -6,7 +6,7 @@ import {
   Req,
   UseGuards,
   Get,
-  Param,
+  Query,
 } from '@nestjs/common';
 import { JornadaService } from './jornada.service';
 import { IniciarJornadaDto } from './dto/iniciar-jornada.dto';
@@ -47,8 +47,22 @@ export class JornadaController {
   }
 
   // PARA CONSULTAR SI HAY JORNADA ACTIVA
-  @Get('active/:unidadId')
-  async getActiva(@Param('unidadId') unidadId: string) {
-    return this.jornadaService.getJornadaActiva(Number(unidadId));
+  // GET /jornadas/activa?unidad_id=123
+  @Get('activa')
+  async isActiva(@Query('unidad_id') unidadId?: string) {
+    const unidad_id_num = unidadId ? Number(unidadId) : undefined;
+    if (!unidad_id_num) {
+      return { ok: true, activa: false, jornada_id: null };
+    }
+
+    const jornada = await this.jornadaService.getJornadaActiva(unidad_id_num);
+    const activa = !!jornada;
+
+    return { ok: true, activa, jornada_id: jornada?.jornada_id ?? null };
   }
 }
+
+
+
+
+
