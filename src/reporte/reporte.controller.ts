@@ -6,16 +6,18 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ReporteService } from './reporte.service';
+import { ReporteService, JornadaRawRow } from './reporte.service';
 import { JornadasReportQueryDto } from './dto/jornadas-report-query.dto';
 
-@Controller('reportes') // 👈 PLURAL: /reportes/...
+@Controller('reportes') // PLURAL: /reportes/...
 export class ReporteController {
   constructor(private readonly reporteService: ReporteService) {}
 
   // Lista JSON para el dashboard
   @Get('jornadas')
-  async jornadas(@Query() query: JornadasReportQueryDto) {
+  async jornadas(
+    @Query() query: JornadasReportQueryDto,
+  ): Promise<JornadaRawRow[]> {
     return this.reporteService.jornadasResumen(query);
   }
 
